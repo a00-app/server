@@ -20,7 +20,7 @@ function generateNonce(): string {
 function setAuthCookie(res: any, token: string): void {
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("auth", token, {
-        domain: isProd ? "a00.app" : "localhost",
+        domain: isProd ? ".a00.app" : "localhost",
         httpOnly: true,
         secure: isProd,
         sameSite: isProd ? "none" : "lax",
