@@ -77,7 +77,6 @@ async function buildStatus(userAddress: string) {
     };
 }
 
-// Ensure user is attached for address access
 router.use(userToken, authRequired);
 
 /**

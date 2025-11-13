@@ -28,7 +28,9 @@ router.post("/upload", validateAPI, upload.single("file"), async (req, res) => {
         const originalName = req.file!.originalname;
         const size = req.file!.size;
 
-        console.log(`[IO] Upload request: user=${address} id=${id} name=${originalName} size=${size}`);
+        console.log(
+            `[IO] Upload request: user=${address} id=${id} name=${originalName} size=${size}`,
+        );
 
         // Check if user has enough balance
         const a00 = new A00();
@@ -48,7 +50,9 @@ router.post("/upload", validateAPI, upload.single("file"), async (req, res) => {
         console.log(`[IO] Precomputed CID for duplicate check: cid=${preCid}`);
         const existing = await File.findOne({ user: address, cid: preCid, isDeleted: false });
         if (existing) {
-            console.log(`[IO] Duplicate detected; returning existing record: user=${address} cid=${preCid} id=${existing.id}`);
+            console.log(
+                `[IO] Duplicate detected; returning existing record: user=${address} cid=${preCid} id=${existing.id}`,
+            );
             return res.status(200).json({
                 id: existing.id,
                 cid: existing.cid,
@@ -97,6 +101,57 @@ router.post("/upload", validateAPI, upload.single("file"), async (req, res) => {
     } catch (err: any) {
         console.error(err);
         return res.status(500).json({ error: "Upload failed" });
+    }
+});
+
+/**
+ * DELETE /all
+ * Marks all user's files as deleted
+ */
+router.delete("/all", validateAPI, async (req, res) => {
+    try {
+        const address = (req.user as any)?.address;
+        console.log(`[IO] Delete all request: user=${address}`);
+
+        const failedCids: string[] = [];
+        const docs = await File.find({ user: address, isDeleted: false });
+        const now = new Date();
+        let totalSize = 0;
+
+        if (docs.length === 0) {
+            return res.json({ ok: true, failed: [], totalDeletedBytes: 0 });
+        }
+
+        for (const doc of docs) {
+            doc.isDeleted = true;
+            doc.deletedAt = now;
+
+            try {
+                await Promise.all([removeCid(doc.cid), doc.save()]);
+                totalSize += (doc.metadata as any).size || 0;
+            } catch (err) {
+                failedCids.push(doc.cid);
+            }
+        }
+
+        const a00 = new A00();
+
+        if (failedCids.length && totalSize > 0) {
+            await a00.decreaseConsumption(address, totalSize);
+        } else {
+            await a00.setConsumptionForUser(address, 0n);
+        }
+
+        console.log(`[IO] All files marked deleted: user=${address} total=${docs.length} failed=${failedCids.length}`);
+
+        if (failedCids.length === docs.length) {
+            return res.status(500).json({ error: "Delete all failed" });
+        }
+
+        return res.json({ ok: true, failed: failedCids, totalDeletedBytes: totalSize });
+    } catch (err: any) {
+        console.error(err);
+        return res.status(500).json({ error: "Delete failed" });
     }
 });
 

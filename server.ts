@@ -19,6 +19,7 @@ import { initIPFS, stopIPFS } from "./lib/ipfs";
 const app: Application = express();
 const server = require("http").createServer(app);
 
+app.set("trust proxy", 1);
 app.use(cors({ origin: process.env.CLIENT!, credentials: true }));
 app.use(helmet());
 app.use(

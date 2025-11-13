@@ -21,6 +21,7 @@ export class A00 {
     provider: JsonRpcProvider;
     vaultContract: Contract;
     vaultAddress: string;
+    private paymentLoopStarted = false;
 
     constructor() {
         try {
@@ -54,8 +55,12 @@ export class A00 {
     }
 
     paymentLoop() {
-        setInterval(
-            async () => {
+        if (this.paymentLoopStarted) return;
+        this.paymentLoopStarted = true;
+        const interval = 1000 * 60 * 60 * 3;
+
+        const run = async () => {
+            try {
                 const tx = await this.vaultContract.pay();
                 const receipt = await tx.wait();
 
@@ -65,13 +70,20 @@ export class A00 {
                         : `Failed to pay\n ${JSON.stringify(receipt)}`,
                 );
 
-                if (receipt.status !== 1) return;
+                if (receipt.status === 1) {
+                    // Stream users with positive consumption to reduce memory pressure
+                    const cursor = UserDB.find(
+                        { consumption: { $gt: 0 } },
+                        { address: 1, balance: 1 },
+                    )
+                        .lean()
+                        .cursor();
 
-                // Get addresses with negative balance
-                const users = await UserDB.find({ consumption: { $gt: 0 } });
-
-                for (const user of users) {
-                    let balance: number;
+                    for await (const user of cursor as any as AsyncIterable<{
+                        address: string;
+                        balance?: number;
+                    }>) {
+                        let balance: number;
 
                     if (!user.balance) {
                         const chainBal: bigint = await this.vaultContract.balances(user.address);
@@ -79,18 +91,24 @@ export class A00 {
                         await UserDB.updateOne({ address: user.address }, { balance });
                     } else balance = user.balance;
 
-                    if (balance < 0) {
-                        console.log(
-                            `User ${user.address} has negative balance ${balance}, setting consumption to 0`,
-                        );
-                        await this.vaultContract.setConsumption(user.address, 0);
-                        await FileDB.updateMany({ user: user.address }, { isDeleted: true });
-                        await UserDB.updateOne({ address: user.address }, { consumption: 0 });
+                        if (balance < 0) {
+                            console.log(
+                                `User ${user.address} has negative balance ${balance}, setting consumption to 0`,
+                            );
+                            await this.vaultContract.setConsumption(user.address, 0);
+                            await FileDB.updateMany({ user: user.address }, { isDeleted: true });
+                            await UserDB.updateOne({ address: user.address }, { consumption: 0 });
+                        }
                     }
                 }
-            },
-            1000 * 60 * 60 * 3,
-        );
+            } catch (err) {
+                console.error("paymentLoop iteration error", err);
+            } finally {
+                setTimeout(run, interval);
+            }
+        };
+
+        setTimeout(run, interval);
     }
 
     /**

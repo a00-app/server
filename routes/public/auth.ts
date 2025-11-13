@@ -17,6 +17,15 @@ function generateNonce(): string {
     return crypto.randomBytes(16).toString("hex");
 }
 
+function purgeExpiredNonces(): void {
+    const now = Date.now();
+    for (const [address, entry] of nonceStore) {
+        if (entry.expiresAt < now) {
+            nonceStore.delete(address);
+        }
+    }
+}
+
 function setAuthCookie(res: any, token: string): void {
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("auth", token, {
@@ -34,6 +43,8 @@ function setAuthCookie(res: any, token: string): void {
  */
 router.get("/nonce", async (req, res) => {
     try {
+        purgeExpiredNonces();
+
         const addressRaw = (req.query.address as string) || "";
         if (!addressRaw) return res.status(400).json({ error: "Missing address" });
 
@@ -54,6 +65,8 @@ router.get("/nonce", async (req, res) => {
  */
 router.post("/verify", async (req, res) => {
     try {
+        purgeExpiredNonces();
+
         const { address: addressRaw, signature } = req.body || {};
         if (!addressRaw || !signature) {
             return res.status(400).json({ error: "Missing address or signature" });

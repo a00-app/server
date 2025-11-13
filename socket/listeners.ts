@@ -31,9 +31,10 @@ export class SocketListeners {
             new SocketPing(this.io, socket).listen();
 
             // Initial files request: send last 20 uploads
-            socket.on("file:initial", () => {
+            socket.on("file:initial", async () => {
                 try {
-                    const items = getRecentFiles();
+                    const items = await getRecentFiles();
+                    console.log(items);
                     socket.emit("file:initial:response", items);
                 } catch (err) {
                     // avoid crashing on socket handler
